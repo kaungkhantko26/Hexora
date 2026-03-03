@@ -18,11 +18,11 @@ export default function ArtistProfilesPage() {
       const supabase = getSupabaseBrowserClient();
       let query = supabase
         .from("artists")
-        .select("id, name, slug, bio, created_at")
+        .select("id, name, slug, bio, genre, created_at")
         .order("name", { ascending: true });
 
       if (q?.trim()) {
-        query = query.or(`name.ilike.%${q.trim()}%,bio.ilike.%${q.trim()}%`);
+        query = query.or(`name.ilike.%${q.trim()}%,genre.ilike.%${q.trim()}%`);
       }
 
       const { data, error } = await query;
@@ -87,7 +87,7 @@ export default function ArtistProfilesPage() {
                   className="block rounded-2xl border border-[#e1d4c0] bg-[#fffcf6] p-4"
                 >
                   <h3 className="text-lg font-semibold">{profile.name}</h3>
-                  <p className="mt-1 text-sm text-[#4d4538]">{profile.bio || "No bio yet."}</p>
+                  <p className="mt-1 text-sm text-[#4d4538]">{profile.genre || "No genre yet."}</p>
                   <p className="mono mt-2 text-xs uppercase tracking-widest text-[#6f6454]">
                     View songs
                   </p>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { getSupabaseBrowserClient, type ArtistProfile, type Lyric } from "@/lib/supabase";
 
 function sanitizeMusicUrl(value: string, provider: "youtube" | "spotify"): string | null {
@@ -41,20 +41,45 @@ export default function AdminPage() {
   const [lyrics, setLyrics] = useState<Lyric[]>([]);
   const [editingLyricId, setEditingLyricId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
-  const [selectedArtistId, setSelectedArtistId] = useState("");
+  const [selectedArtistIds, setSelectedArtistIds] = useState<string[]>([]);
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [spotifyUrl, setSpotifyUrl] = useState("");
   const [content, setContent] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+  const [lyricsArtistSearch, setLyricsArtistSearch] = useState("");
+  const [activeLyricsArtistId, setActiveLyricsArtistId] = useState<string | null>(null);
 
   const [artistProfiles, setArtistProfiles] = useState<ArtistProfile[]>([]);
+  const [editingArtistId, setEditingArtistId] = useState<string | null>(null);
   const [artistName, setArtistName] = useState("");
-  const [artistBio, setArtistBio] = useState("");
+  const [artistGenre, setArtistGenre] = useState("");
   const [isArtistLoading, setIsArtistLoading] = useState(true);
   const [isArtistSaving, setIsArtistSaving] = useState(false);
   const [artistError, setArtistError] = useState("");
+  const artistFormRef = useRef<HTMLDivElement | null>(null);
+  const lyricsFormRef = useRef<HTMLDivElement | null>(null);
+
+  const activeLyricsArtist = activeLyricsArtistId
+    ? artistProfiles.find((profile) => String(profile.id) === activeLyricsArtistId) ?? null
+    : null;
+  const searchQuery = lyricsArtistSearch.trim().toLowerCase();
+  const filteredLyrics = lyrics.filter((item) => {
+    const artistTokens = item.artist
+      .split(",")
+      .map((name) => name.trim().toLowerCase())
+      .filter(Boolean);
+    const itemArtistId = item.artist_id !== null && item.artist_id !== undefined ? String(item.artist_id) : null;
+
+    const matchesArtistFilter =
+      !activeLyricsArtist ||
+      itemArtistId === String(activeLyricsArtist.id) ||
+      artistTokens.includes(activeLyricsArtist.name.toLowerCase());
+
+    const matchesArtistSearch = !searchQuery || artistTokens.some((name) => name.includes(searchQuery));
+    return matchesArtistFilter && matchesArtistSearch;
+  });
 
   async function loadLyrics() {
     setIsLoading(true);
@@ -81,7 +106,7 @@ export default function AdminPage() {
       const supabase = getSupabaseBrowserClient();
       const { data, error } = await supabase
         .from("artists")
-        .select("id, name, slug, bio, created_at")
+        .select("id, name, slug, bio, genre, created_at")
         .order("name", { ascending: true });
       if (error) throw new Error(error.message);
       const sorted = [...((data ?? []) as ArtistProfile[])].sort((a, b) =>
@@ -89,7 +114,7 @@ export default function AdminPage() {
       );
       setArtistProfiles(sorted);
       if (sorted.length > 0) {
-        setSelectedArtistId((prev) => prev || String(sorted[0].id));
+        setSelectedArtistIds((prev) => (prev.length > 0 ? prev : [String(sorted[0].id)]));
       }
     } catch (e) {
       setArtistError(e instanceof Error ? e.message : "Failed to load artist profiles.");
@@ -118,27 +143,63 @@ export default function AdminPage() {
               single: () => Promise<{ data: ArtistProfile; error: { message: string } | null }>;
             };
           };
+          update: (values: Record<string, unknown>) => {
+            eq: (column: string, value: string) => {
+              select: (columns: string) => {
+                maybeSingle: () => Promise<{ data: ArtistProfile | null; error: { message: string } | null }>;
+              };
+            };
+          };
         };
       };
       const name = artistName.trim();
-      if (!name) throw new Error("Artist name is required.");
+      const genre = artistGenre.trim();
+      if (!name || !genre) throw new Error("Artist name and genre are required.");
 
-      const { data, error } = await db
-        .from("artists")
-        .insert([{ name, bio: artistBio.trim(), slug: makeSlug(name) }])
-        .select("id, name, slug, bio, created_at")
-        .single();
+      if (editingArtistId) {
+        const { data, error } = await db
+          .from("artists")
+          .update({ name, genre })
+          .eq("id", editingArtistId)
+          .select("id, name, slug, bio, genre, created_at")
+          .maybeSingle();
 
-      if (error) throw new Error(error.message);
+        if (error) throw new Error(error.message);
+        if (!data) throw new Error("Artist profile not found.");
 
-      setArtistProfiles((prev) => {
-        const next = [data, ...prev];
-        next.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-        return next;
-      });
-      setSelectedArtistId(String(data.id));
+        setArtistProfiles((prev) => {
+          const next = prev.map((item) => (String(item.id) === String(data.id) ? data : item));
+          next.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+          return next;
+        });
+        setLyrics((prev) =>
+          prev.map((item) => {
+            if (item.artist_id !== null && item.artist_id !== undefined && String(item.artist_id) === String(data.id)) {
+              return { ...item, artist: data.name };
+            }
+            return item;
+          })
+        );
+      } else {
+        const { data, error } = await db
+          .from("artists")
+          .insert([{ name, genre, slug: makeSlug(name) }])
+          .select("id, name, slug, bio, genre, created_at")
+          .single();
+
+        if (error) throw new Error(error.message);
+
+        setArtistProfiles((prev) => {
+          const next = [data, ...prev];
+          next.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+          return next;
+        });
+        setSelectedArtistIds([String(data.id)]);
+      }
+
+      setEditingArtistId(null);
       setArtistName("");
-      setArtistBio("");
+      setArtistGenre("");
     } catch (e) {
       setArtistError(e instanceof Error ? e.message : "Failed to save artist profile.");
     } finally {
@@ -180,31 +241,49 @@ export default function AdminPage() {
       };
       const titleValue = title.trim();
       const lyricsValue = content.trim();
-      const artistId = selectedArtistId.trim();
+      const artistIds = selectedArtistIds.map((id) => id.trim()).filter(Boolean);
 
-      if (!titleValue || !lyricsValue || !artistId) {
+      if (!titleValue || !lyricsValue || artistIds.length === 0) {
         throw new Error("title, artist and lyrics are required.");
       }
 
       const youtubeValue = sanitizeMusicUrl(youtubeUrl, "youtube");
       const spotifyValue = sanitizeMusicUrl(spotifyUrl, "spotify");
 
-      const { data: artistData, error: artistFetchError } = await db
-        .from("artists")
-        .select("id, name")
-        .eq("id", artistId)
-        .maybeSingle();
+      const { data: artistData, error: artistFetchError } = await (
+        db.from("artists").select("id, name") as unknown as {
+          in: (column: string, values: string[]) => Promise<{
+            data: Array<{ id: string | number; name: string }> | null;
+            error: { message: string } | null;
+          }>;
+        }
+      )
+        .in("id", artistIds);
 
       if (artistFetchError) throw new Error(artistFetchError.message);
-      if (!artistData) throw new Error("Selected artist profile does not exist.");
+      if (!artistData || artistData.length === 0) {
+        throw new Error("Selected artist profile does not exist.");
+      }
+
+      const artistById = new Map(artistData.map((artist) => [String(artist.id), artist]));
+      const orderedArtists = artistIds
+        .map((id) => artistById.get(id))
+        .filter((artist): artist is { id: string | number; name: string } => Boolean(artist));
+
+      if (orderedArtists.length === 0) {
+        throw new Error("Selected artist profile does not exist.");
+      }
+
+      const artistNames = orderedArtists.map((artist) => artist.name).join(", ");
+      const artistIdValue = orderedArtists.length === 1 ? orderedArtists[0].id : null;
 
       if (editingLyricId) {
         const { data, error } = await db
           .from("lyrics")
           .update({
             title: titleValue,
-            artist: artistData.name,
-            artist_id: artistData.id,
+            artist: artistNames,
+            artist_id: artistIdValue,
             youtube_url: youtubeValue,
             spotify_url: spotifyValue,
             lyrics: lyricsValue,
@@ -222,8 +301,8 @@ export default function AdminPage() {
           .insert([
             {
               title: titleValue,
-              artist: artistData.name,
-              artist_id: artistData.id,
+              artist: artistNames,
+              artist_id: artistIdValue,
               youtube_url: youtubeValue,
               spotify_url: spotifyValue,
               lyrics: lyricsValue,
@@ -258,10 +337,23 @@ export default function AdminPage() {
 
     setEditingLyricId(item.id);
     setTitle(item.title);
-    setSelectedArtistId(matchedArtist ? String(matchedArtist.id) : "");
+    if (matchedArtist) {
+      setSelectedArtistIds([String(matchedArtist.id)]);
+    } else {
+      const selectedByName = item.artist
+        .split(",")
+        .map((name) => name.trim().toLowerCase())
+        .filter(Boolean)
+        .map((name) => artistProfiles.find((profile) => profile.name.toLowerCase() === name))
+        .filter((profile): profile is ArtistProfile => Boolean(profile))
+        .map((profile) => String(profile.id));
+
+      setSelectedArtistIds(selectedByName);
+    }
     setYoutubeUrl(item.youtube_url ?? "");
     setSpotifyUrl(item.spotify_url ?? "");
     setContent(item.lyrics);
+    lyricsFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function onCancelEdit() {
@@ -271,15 +363,37 @@ export default function AdminPage() {
     setSpotifyUrl("");
     setContent("");
     if (artistProfiles.length > 0) {
-      setSelectedArtistId(String(artistProfiles[0].id));
+      setSelectedArtistIds([String(artistProfiles[0].id)]);
     }
+  }
+
+  function onToggleArtistSelection(artistId: string) {
+    setSelectedArtistIds((prev) => {
+      if (prev.includes(artistId)) {
+        return prev.filter((id) => id !== artistId);
+      }
+      return [...prev, artistId];
+    });
+  }
+
+  function onEditArtist(profile: ArtistProfile) {
+    setEditingArtistId(String(profile.id));
+    setArtistName(profile.name);
+    setArtistGenre(profile.genre ?? "");
+    artistFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function onCancelArtistEdit() {
+    setEditingArtistId(null);
+    setArtistName("");
+    setArtistGenre("");
   }
 
   return (
     <main className="grain min-h-screen">
       <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6 px-4 py-8 md:px-8 lg:grid-cols-[380px_1fr]">
         <section className="space-y-6">
-          <div className="card rounded-3xl p-6">
+          <div ref={artistFormRef} className="card rounded-3xl p-6">
             <div className="mb-2 flex items-center justify-between">
               <p className="mono text-xs uppercase tracking-[0.18em] text-[#6b604e]">Admin Side</p>
               <Link
@@ -290,7 +404,9 @@ export default function AdminPage() {
               </Link>
             </div>
             <h1 className="text-3xl font-semibold leading-tight">Artist Profile List</h1>
-            <p className="mt-2 text-sm text-[#4e4537]">Add artist profiles for users to browse.</p>
+            <p className="mt-2 text-sm text-[#4e4537]">
+              {editingArtistId ? "Update artist profile details." : "Add artist profiles for users to browse."}
+            </p>
 
             <form onSubmit={onSubmitArtist} className="mt-4 space-y-3">
               <label className="block">
@@ -307,13 +423,13 @@ export default function AdminPage() {
               </label>
 
               <label className="block">
-                <span className="mono text-xs uppercase tracking-widest text-[#685d4d]">Bio</span>
-                <textarea
-                  value={artistBio}
-                  onChange={(e) => setArtistBio(e.target.value)}
-                  rows={3}
-                  className="mt-1 w-full resize-y rounded-xl border border-[#d7c9b2] bg-white px-3 py-2 text-sm outline-none ring-[#0f8a6f]/35 focus:ring-4"
-                  placeholder="Short artist profile..."
+                <span className="mono text-xs uppercase tracking-widest text-[#685d4d]">Genre</span>
+                <input
+                  value={artistGenre}
+                  onChange={(e) => setArtistGenre(e.target.value)}
+                  required
+                  className="mt-1 w-full rounded-xl border border-[#d7c9b2] bg-white px-3 py-2 text-sm outline-none ring-[#0f8a6f]/35 focus:ring-4"
+                  placeholder="Pop, Rock, Hip-hop..."
                 />
               </label>
 
@@ -322,14 +438,29 @@ export default function AdminPage() {
                 disabled={isArtistSaving}
                 className="w-full rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {isArtistSaving ? "Saving..." : "Add Artist Profile"}
+                {isArtistSaving
+                  ? editingArtistId
+                    ? "Updating..."
+                    : "Saving..."
+                  : editingArtistId
+                    ? "Update Artist Profile"
+                    : "Add Artist Profile"}
               </button>
+              {editingArtistId ? (
+                <button
+                  type="button"
+                  onClick={onCancelArtistEdit}
+                  className="w-full rounded-xl border border-[#d7c9b2] bg-white px-4 py-2 text-sm font-semibold text-[#5f5444] transition hover:bg-[#f7efe3]"
+                >
+                  Cancel Artist Edit
+                </button>
+              ) : null}
             </form>
 
             {artistError ? <p className="mt-3 text-sm text-[var(--danger)]">{artistError}</p> : null}
           </div>
 
-          <div className="card rounded-3xl p-6">
+          <div ref={lyricsFormRef} className="card rounded-3xl p-6">
             <h2 className="text-3xl font-semibold leading-tight">Manage Lyrics</h2>
             <p className="mt-2 text-sm text-[#4e4537]">
               {editingLyricId ? "Edit an existing lyric entry." : "Add new lyrics to the database."}
@@ -351,22 +482,33 @@ export default function AdminPage() {
                 <span className="mono text-xs uppercase tracking-widest text-[#685d4d]">
                   Artist Profile
                 </span>
-                <select
-                  value={selectedArtistId}
-                  onChange={(e) => setSelectedArtistId(e.target.value)}
-                  required
-                  className="mt-1 w-full rounded-xl border border-[#d7c9b2] bg-white px-3 py-2 text-sm outline-none ring-[#0f8a6f]/35 focus:ring-4"
-                >
-                  <option value="" disabled>
-                    Select artist profile
-                  </option>
-                  {artistProfiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-[#746a5b]">Songs are linked to this artist profile.</p>
+                <div className="mt-2 flex flex-wrap gap-2 rounded-xl border border-[#d7c9b2] bg-white p-3">
+                  {artistProfiles.length === 0 ? (
+                    <p className="text-xs text-[#746a5b]">No artist profiles yet.</p>
+                  ) : (
+                    artistProfiles.map((profile) => {
+                      const isSelected = selectedArtistIds.includes(String(profile.id));
+                      return (
+                        <button
+                          key={profile.id}
+                          type="button"
+                          onClick={() => onToggleArtistSelection(String(profile.id))}
+                          aria-pressed={isSelected}
+                          className={`rounded-full border px-3 py-1 text-xs transition ${
+                            isSelected
+                              ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                              : "border-[#d7c9b2] bg-[#fffcf6] text-[#5f5444] hover:bg-[#f4ecdf]"
+                          }`}
+                        >
+                          {profile.name}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-[#746a5b]">
+                  Click artist names to toggle selection.
+                </p>
               </label>
 
               <label className="block">
@@ -443,10 +585,33 @@ export default function AdminPage() {
                 artistProfiles.map((profile) => (
                   <article
                     key={profile.id}
-                    className="rounded-2xl border border-[#e1d4c0] bg-[#fffcf6] p-4"
+                    className={`rounded-2xl border bg-[#fffcf6] p-4 ${
+                      String(profile.id) === activeLyricsArtistId
+                        ? "border-[var(--accent)]"
+                        : "border-[#e1d4c0]"
+                    }`}
                   >
-                    <h3 className="text-lg font-semibold">{profile.name}</h3>
-                    <p className="mt-1 text-sm text-[#4d4538]">{profile.bio || "No bio yet."}</p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActiveLyricsArtistId((prev) =>
+                          prev === String(profile.id) ? null : String(profile.id)
+                        )
+                      }
+                      className="text-left text-lg font-semibold underline-offset-2 hover:underline"
+                    >
+                      {profile.name}
+                    </button>
+                    <p className="mono mt-1 text-xs text-[#746a5b]">{profile.genre || "No genre set."}</p>
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() => onEditArtist(profile)}
+                        className="mono rounded-md border border-[#d7c9b2] bg-white px-2 py-1 text-[10px] uppercase tracking-widest text-[#5f5444]"
+                      >
+                        Edit Artist
+                      </button>
+                    </div>
                   </article>
                 ))
               )}
@@ -456,16 +621,35 @@ export default function AdminPage() {
           <div className="card rounded-3xl p-6">
             <h2 className="text-2xl font-semibold">Latest Lyrics Entries</h2>
             <p className="text-sm text-[#4e4537]">
-              {lyrics.length} stored lyric{lyrics.length === 1 ? "" : "s"}
+              {filteredLyrics.length} lyric{filteredLyrics.length === 1 ? "" : "s"} shown
             </p>
+            <div className="mt-3 space-y-2">
+              <input
+                value={lyricsArtistSearch}
+                onChange={(e) => setLyricsArtistSearch(e.target.value)}
+                className="w-full rounded-xl border border-[#d7c9b2] bg-white px-3 py-2 text-sm outline-none ring-[#0f8a6f]/35 focus:ring-4"
+                placeholder="Search artist songs by artist name..."
+              />
+              {activeLyricsArtist ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveLyricsArtistId(null)}
+                  className="mono rounded-md border border-[#d7c9b2] bg-white px-2 py-1 text-[10px] uppercase tracking-widest text-[#5f5444]"
+                >
+                  Clear artist filter: {activeLyricsArtist.name}
+                </button>
+              ) : null}
+            </div>
 
             <div className="mt-4 space-y-3">
               {isLoading ? (
                 <p className="text-sm text-[#6b604e]">Loading lyrics...</p>
-              ) : lyrics.length === 0 ? (
-                <p className="text-sm text-[#6b604e]">No lyrics yet.</p>
+              ) : filteredLyrics.length === 0 ? (
+                <p className="text-sm text-[#6b604e]">
+                  {lyrics.length === 0 ? "No lyrics yet." : "No lyrics found for this artist filter."}
+                </p>
               ) : (
-                lyrics.map((item) => (
+                filteredLyrics.map((item) => (
                   <article key={item.id} className="rounded-2xl border border-[#e1d4c0] bg-[#fffcf6] p-4">
                     <header className="mb-2">
                       <h3 className="text-lg font-semibold">{item.title}</h3>

@@ -49,7 +49,7 @@ function ArtistSongsContent() {
         };
         const { data: artistData, error: artistError } = await db
           .from("artists")
-          .select("id, name, slug, bio, created_at")
+          .select("id, name, slug, bio, genre, created_at")
           .eq("slug", slugValue)
           .maybeSingle();
 
@@ -108,7 +108,7 @@ function ArtistSongsContent() {
           ) : (
             <>
               <h1 className="mt-4 text-3xl font-semibold leading-tight">{artistProfile?.name}</h1>
-              <p className="mt-2 text-sm text-[#4e4537]">{artistProfile?.bio || "No bio yet."}</p>
+              <p className="mt-2 text-sm text-[#4e4537]">{artistProfile?.genre || "No genre yet."}</p>
 
               <h2 className="mt-6 text-2xl font-semibold">Song List</h2>
               <div className="mt-3 space-y-3">

@@ -35,5 +35,6 @@ export type ArtistProfile = {
   name: string;
   slug: string;
   bio: string;
+  genre?: string;
   created_at: string;
 };

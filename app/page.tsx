@@ -60,6 +60,12 @@ export default function Home() {
           <p className="mt-2 text-sm text-[#4e4537]">
             Search by artist name, song name, or both.
           </p>
+          <Link
+            href="/request-song"
+            className="mono mt-4 inline-block rounded-lg border border-[#d7c9b2] bg-[#fffcf6] px-3 py-2 text-xs uppercase tracking-widest text-[#5a503f] transition hover:bg-[#f4ecdf]"
+          >
+            Request a song
+          </Link>
 
           <form onSubmit={onSearchLyrics} className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2">
             <label className="block">

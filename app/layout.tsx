@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 import ThemeToggle from "@/components/theme-toggle";
 
@@ -12,9 +13,20 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const gaId = "G-RCYY2WJCPF";
+
   return (
     <html lang="en">
       <body className="antialiased">
+        <Script src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`} strategy="afterInteractive" />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', '${gaId}');
+          `}
+        </Script>
         <div className="min-h-screen">
           {children}
           <footer className="border-t border-[var(--line)] bg-[var(--surface)] px-4 py-4 text-center md:px-8">

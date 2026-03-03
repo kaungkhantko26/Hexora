@@ -6,6 +6,37 @@ import { Suspense, useEffect, useState } from "react";
 import { getSupabaseBrowserClient, type Lyric } from "@/lib/supabase";
 import UserNav from "@/components/user-nav";
 
+function getYoutubeEmbedUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+
+    if (host.includes("youtu.be")) {
+      const id = url.pathname.split("/").filter(Boolean)[0];
+      return id ? `https://www.youtube.com/embed/${id}` : null;
+    }
+
+    if (!host.includes("youtube.com")) return null;
+
+    if (url.pathname.startsWith("/embed/")) {
+      const id = url.pathname.split("/")[2];
+      return id ? `https://www.youtube.com/embed/${id}` : null;
+    }
+
+    const v = url.searchParams.get("v");
+    if (v) return `https://www.youtube.com/embed/${v}`;
+
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts[0] === "shorts" && parts[1]) {
+      return `https://www.youtube.com/embed/${parts[1]}`;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function SongDetailContent() {
   const searchParams = useSearchParams();
   const id = searchParams.get("id");
@@ -13,6 +44,7 @@ function SongDetailContent() {
   const [song, setSong] = useState<Lyric | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const youtubeEmbedUrl = getYoutubeEmbedUrl(song?.youtube_url);
 
   useEffect(() => {
     if (!id) {
@@ -91,6 +123,18 @@ function SongDetailContent() {
                   </a>
                 ) : null}
               </div>
+              {youtubeEmbedUrl ? (
+                <div className="mt-4 max-w-md overflow-hidden rounded-2xl border border-[#e1d4c0] bg-white">
+                  <iframe
+                    src={youtubeEmbedUrl}
+                    title="YouTube player"
+                    className="h-[190px] w-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    allowFullScreen
+                  />
+                </div>
+              ) : null}
               <p className="mt-4 whitespace-pre-wrap text-sm text-[#332d24]">{song.lyrics}</p>
             </>
           ) : null}

@@ -9,9 +9,18 @@ export default function SongNamesPage() {
   const [songNames, setSongNames] = useState<Array<{ id: number; title: string; artist: string }>>(
     []
   );
+  const [songQuery, setSongQuery] = useState("");
   const [artistSlugByName, setArtistSlugByName] = useState<Record<string, string>>({});
   const [isSongListLoading, setIsSongListLoading] = useState(true);
   const [songListError, setSongListError] = useState("");
+  const normalizedQuery = songQuery.trim().toLowerCase();
+  const filteredSongNames = songNames.filter((song) => {
+    if (!normalizedQuery) return true;
+    return (
+      song.title.toLowerCase().includes(normalizedQuery) ||
+      song.artist.toLowerCase().includes(normalizedQuery)
+    );
+  });
 
   useEffect(() => {
     async function loadSongNames() {
@@ -59,16 +68,24 @@ export default function SongNamesPage() {
         <section className="card rounded-3xl p-6">
           <h1 className="text-3xl font-semibold leading-tight">Song Names</h1>
           <p className="mt-2 text-sm text-[#4e4537]">All song names currently in the lyrics library.</p>
+          <input
+            value={songQuery}
+            onChange={(e) => setSongQuery(e.target.value)}
+            className="mt-4 w-full rounded-xl border border-[#d7c9b2] bg-white px-3 py-2 text-sm outline-none ring-[#0f8a6f]/35 focus:ring-4"
+            placeholder="Search by song title or artist..."
+          />
 
           {songListError ? <p className="mt-3 text-sm text-[var(--danger)]">{songListError}</p> : null}
 
           <div className="mt-4 space-y-3">
             {isSongListLoading ? (
               <p className="text-sm text-[#6b604e]">Loading song names...</p>
-            ) : songNames.length === 0 ? (
-              <p className="text-sm text-[#6b604e]">No song names yet.</p>
+            ) : filteredSongNames.length === 0 ? (
+              <p className="text-sm text-[#6b604e]">
+                {songNames.length === 0 ? "No song names yet." : "No songs match your search."}
+              </p>
             ) : (
-              songNames.map((song, index) => (
+              filteredSongNames.map((song, index) => (
                 <article
                   key={`${song.id}-${index}`}
                   className="rounded-2xl border border-[#e1d4c0] bg-[#fffcf6] p-4"
