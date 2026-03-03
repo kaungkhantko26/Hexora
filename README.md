@@ -2,7 +2,7 @@
 
 Hexora is a lightweight lyrics website focused on making songs easier to **discover, organize, and read in one place**.
 
-**Live demo:** https://kaungkhantko26.github.io/hexora/
+**Live demo:** https://hexoramm.netlify.app/
 
 ---
 
