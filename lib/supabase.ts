@@ -1,0 +1,39 @@
+import { createClient } from "@supabase/supabase-js";
+
+let browserClient: ReturnType<typeof createClient> | null = null;
+
+export function getSupabaseBrowserClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(
+      "Missing Supabase env vars: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY"
+    );
+  }
+
+  if (!browserClient) {
+    browserClient = createClient(supabaseUrl, supabaseAnonKey);
+  }
+
+  return browserClient;
+}
+
+export type Lyric = {
+  id: number;
+  title: string;
+  artist: string;
+  artist_id?: string | number | null;
+  youtube_url?: string | null;
+  spotify_url?: string | null;
+  lyrics: string;
+  created_at: string;
+};
+
+export type ArtistProfile = {
+  id: string | number;
+  name: string;
+  slug: string;
+  bio: string;
+  created_at: string;
+};
